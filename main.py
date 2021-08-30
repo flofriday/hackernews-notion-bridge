@@ -74,7 +74,7 @@ async def download_comment(
         return None
 
     data = r.json()
-    if "deleted" in data and data["deleted"]:
+    if data is None or "deleted" in data and data["deleted"]:
         return None
 
     # First download the child-comments recursively:

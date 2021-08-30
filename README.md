@@ -8,7 +8,7 @@ Read Hackernews in your favourite all-in-one workspace.
 ## Why?
 
 Well, many dislike the default HackerNews webinterface. Which is why everyone
-and their dog build their own HN client. I also really enjoy using creatively
+and their dog build their own HN client. I also really enjoy creatively
 misusing tools for things they definitely weren't designed for.
 
 So, whats a better way to jump the HN-client bandwagon, than by integrating one

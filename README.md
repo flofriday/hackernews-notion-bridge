@@ -33,3 +33,5 @@ of my biggest time-sinks in my favourite productivity app?
    - Website: URL
 5. Install all dependencies with `python3 -m pip install -r requirements.txt`
 6. Run the script with `python3 main.py`
+
+You can also see how I deploy this script in `deployment.md`.

@@ -12,7 +12,6 @@ import asyncio
 import logging
 import argparse
 
-NUM_STORIES = 30
 TIMEOUT = 60  # The timeout is so high because we do many requests in paraleell
 
 
@@ -67,7 +66,7 @@ def process_comment_html(text: str) -> str:
 
 
 async def download_comment(id: int, client: httpx.AsyncClient) -> Comment:
-    """Download a HN comment and all of its comments recurisvly"""
+    """Download a HN comment and all of its comments recursively"""
     # Download the comment
     try:
         r = await client.get(
@@ -124,13 +123,12 @@ async def download_story(id: int, client: httpx.AsyncClient) -> Story:
 
     data = r.json()
 
-    # Ignore soties without an url for now
+    # Ignore stories without an url for now
     # TODO: fix that in the future
     if "url" not in data:
         raise DownloadExcpetion(f"Story {id} has no URL")
 
     # First download the child-comments recursively:
-    # TODO: continue here the switch to exception from optional types
     comments = []
     if "kids" in data:
         comment_ids = data["kids"]
@@ -168,15 +166,15 @@ def count_comments(item: Union[Comment, Story]) -> int:
     return result
 
 
-async def download_stories() -> List[Story]:
+async def download_stories(number: int) -> List[Story]:
     """Download the first n top HN stories"""
-    # First downnload which stories are currently trending
+    # First download which stories are currently trending
     r = httpx.get("https://hacker-news.firebaseio.com/v0/topstories.json")
 
     if r.status_code != 200:
         raise Exception(f"Error downloading stories: {r.status}")
 
-    top_stories = r.json()[: NUM_STORIES + 1]
+    top_story_ids = r.json()
 
     # Now download the stories
     # Only download one story (with its comments) at a time as I got timouts
@@ -184,10 +182,13 @@ async def download_stories() -> List[Story]:
     async with httpx.AsyncClient() as client:
         stories = []
         index = 0
-        while len(stories) < NUM_STORIES:
-            story_id = top_stories[index]
+        while len(stories) < number:
+            story_id = top_story_ids[index]
             index += 1
-            logging.info(f"Downloading story {story_id}")
+            logging.info(
+                f"Downloading story [{len(stories) + 1} of {number}]: "
+                f"{story_id}"
+            )
             try:
                 story = await download_story(story_id, client)
             except DownloadExcpetion as e:
@@ -211,7 +212,8 @@ def properties_from_story(story: Story, position: int) -> dict:
     }
 
 
-def richtexts_from_html(tag, style=None) -> List[dict]:
+def richtexts_from_html(tag: Any, style=None) -> List[dict]:
+    """Create notion richtexts from a html soup"""
     if style is None:
         style = dict()
     else:
@@ -221,7 +223,7 @@ def richtexts_from_html(tag, style=None) -> List[dict]:
         obj = {
             "type": "text",
             "text": {
-                "content": tag.string[: 2000 - 2],
+                "content": tag.string,
             },
             "annotations": {},
         }
@@ -232,6 +234,8 @@ def richtexts_from_html(tag, style=None) -> List[dict]:
             obj["annotations"]["italic"] = True
         if "code" in style and style["code"]:
             obj["annotations"]["code"] = True
+        if "color" in style and style["color"]:
+            obj["annotations"]["color"] = style["color"]
         if "url" in style:
             obj["text"]["link"] = dict()
             obj["text"]["link"]["url"] = style["url"]
@@ -244,14 +248,21 @@ def richtexts_from_html(tag, style=None) -> List[dict]:
     if tag.name == "b":
         style["bold"] = True
 
+    if tag.name in ["code", "pre"]:
+        style["code"] = True
+
     if tag.name == "a":
         style["url"] = tag["href"]
+        style["color"] = "blue"
 
     for kid in tag.contents:
         res += richtexts_from_html(kid, style)
 
     if tag.name == "p":
-        kid[0]["text"]["content"] += "\n\n"
+        res[0]["text"]["content"] = "\n\n" + res[0]["text"]["content"]
+
+    if tag.name not in ["i", "b", "a", "p", "pre", "code", "[document]"]:
+        logging.warning(f"Unknown tag found: {tag.name}")
 
     return res
 
@@ -260,9 +271,11 @@ def block_from_comment(comment: Comment) -> dict:
     """Create Notion a block from a comment"""
 
     try:
-        text = (richtexts_from_html(comment.text),)
+        text = richtexts_from_html(comment.text)
     except Exception as e:
-        logging.warning(f"Error parsing richtext comment {comment.id}: {e}")
+        logging.warning(
+            f"Error parsing richtext comment {comment.id}: {repr(e)}"
+        )
         text = [
             {
                 "type": "text",
@@ -278,7 +291,7 @@ def block_from_comment(comment: Comment) -> dict:
         "bulleted_list_item": {"text": text},
     }
 
-    logging.info(json.dumps(richtexts_from_html(comment.text)))
+    # logging.info(json.dumps(text))
 
     if len(comment.comments) != 0:
         children = [block_from_comment(c) for c in comment.comments]
@@ -304,7 +317,7 @@ def blocks_from_story(story: Story) -> list:
                 "text": [
                     {
                         "type": "text",
-                        "href": "/https://news.ycombinator.com/item?"
+                        "href": "https://news.ycombinator.com/item?"
                         f"id={story.id}",
                         "text": {
                             "content": "on Hacker News",
@@ -378,7 +391,7 @@ def update_notion(stories: List[Story]):
 
     # Add the new stories
     for n, story in enumerate(stories):
-        logging.info(f"Uploading story {story.id}")
+        logging.info(f"Uploading story [{n+1} of {len(stories)}]: {story.id}")
         properties = properties_from_story(story, n + 1)
         blocks = blocks_from_story(story)
         notion.pages.create(
@@ -398,16 +411,23 @@ async def main():
     )
 
     # Setup argparse
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description="Hackernews-Notion-Bridge")
     parser.add_argument(
         "--loop",
         help="Update every 10min, instead of just running once",
         action="store_true",
     )
+    parser.add_argument(
+        "-n",
+        "--number",
+        type=int,
+        default=10,
+        help="Number of stories to download (default:10).",
+    )
     args = parser.parse_args()
 
-    # Download and reupload stories
-    stories = await download_stories()
+    # Download and re-upload stories
+    stories = await download_stories(args.number)
     update_notion(stories)
 
     # Loop if specified

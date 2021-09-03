@@ -16,7 +16,6 @@ of my biggest time-sinks in my favourite productivity app?
 
 ## Current Limitations
 
-- Comments loose formatting (bold, itallic, URLs)
 - Webbookmarks don't quite work (only show url but no image/description)
 - Pages get replaced instead of updated
 

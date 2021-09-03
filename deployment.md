@@ -35,7 +35,7 @@ After=network.target
 WorkingDirectory=/home/pi/hackernews-notion-bridge
 Type=simple
 User=pi
-ExecStart=/usr/local/bin/python3.9 /home/pi/hackernews-notion-bridge/main.py --loop
+ExecStart=/usr/local/bin/python3.9 /home/pi/hackernews-notion-bridge/main.py --loop --number 30
 Restart=always
 
 [Install]

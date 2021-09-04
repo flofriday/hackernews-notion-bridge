@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Any, List, Optional, Union
 from datetime import datetime
-from notion_client import Client as NotionClient
+from notion_client import Client as NotionClient, APIResponseError
 from bs4 import BeautifulSoup
 import bs4
 import json
@@ -223,7 +223,8 @@ def richtexts_from_html(tag: Any, style=None) -> List[dict]:
         obj = {
             "type": "text",
             "text": {
-                "content": tag.string,
+                # Notion only allows up to 2000 characters in a richtext
+                "content": tag.string[: (2000 - 2)],
             },
             "annotations": {},
         }
@@ -394,11 +395,14 @@ def update_notion(stories: List[Story]):
         logging.info(f"Uploading story [{n+1} of {len(stories)}]: {story.id}")
         properties = properties_from_story(story, n + 1)
         blocks = blocks_from_story(story)
-        notion.pages.create(
-            parent={"database_id": database_id},
-            properties=properties,
-            children=blocks,
-        )
+        try:
+            notion.pages.create(
+                parent={"database_id": database_id},
+                properties=properties,
+                children=blocks,
+            )
+        except APIResponseError as e:
+            logging.warning(f"Error uploading story {story.id}: {e}")
 
 
 async def main():

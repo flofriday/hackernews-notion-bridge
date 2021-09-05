@@ -207,8 +207,13 @@ def properties_from_story(story: Story, position: int) -> dict:
                 {"text": {"content": story.title}},
             ],
         },
-        "Pos": {"number": position},
+        "Position": {"number": position},
         "Website": {"url": story.url},
+        "Hackernews Link": {
+            "url": f"https://news.ycombinator.com/item?id={story.id}"
+        },
+        "Comments": {"number": count_comments(story)},
+        "Points": {"number": story.score},
     }
 
 
@@ -271,6 +276,7 @@ def richtexts_from_html(tag: Any, style=None) -> List[dict]:
 def block_from_comment(comment: Comment) -> dict:
     """Create Notion a block from a comment"""
 
+    # Convert the html comment to notion richtext
     try:
         text = richtexts_from_html(comment.text)
     except Exception as e:
@@ -286,13 +292,39 @@ def block_from_comment(comment: Comment) -> dict:
             }
         ]
 
+    # Add the author's name
+    text.extend(
+        [
+            {
+                "type": "text",
+                "text": {
+                    "content": "\nby ",
+                },
+                "annotations": {
+                    "color": "gray",
+                },
+            },
+            {
+                "type": "text",
+                "text": {
+                    "content": comment.by,
+                    "link": {
+                        "url": f"https://news.ycombinator.com/user?id={comment.by}",
+                    },
+                },
+                "annotations": {
+                    "color": "gray",
+                },
+            },
+        ]
+    )
+
+    # Assemble the final block
     block = {
         "object": "block",
         "type": "bulleted_list_item",
         "bulleted_list_item": {"text": text},
     }
-
-    # logging.info(json.dumps(text))
 
     if len(comment.comments) != 0:
         children = [block_from_comment(c) for c in comment.comments]
@@ -318,23 +350,8 @@ def blocks_from_story(story: Story) -> list:
                 "text": [
                     {
                         "type": "text",
-                        "href": "https://news.ycombinator.com/item?"
-                        f"id={story.id}",
                         "text": {
-                            "content": "on Hacker News",
-                            "link": {
-                                "url": "https://news.ycombinator.com/item?"
-                                f"id={story.id}",
-                            },
-                        },
-                    },
-                    {
-                        "type": "text",
-                        "text": {
-                            "content": " · "
-                            f"{story.score} Points · "
-                            f"{count_comments(story)} Comments · "
-                            f"by ",
+                            "content": "by ",
                         },
                     },
                     {
@@ -371,6 +388,23 @@ def blocks_from_story(story: Story) -> list:
     if len(story.comments) != 0:
         for comment in story.comments:
             blocks.append(block_from_comment(comment))
+    else:
+        blocks.append(
+            {
+                "object": "block",
+                "type": "paragraph",
+                "paragraph": {
+                    "text": [
+                        {
+                            "type": "text",
+                            "text": {
+                                "content": "There are no comments yet.",
+                            },
+                        },
+                    ]
+                },
+            }
+        )
 
     return blocks
 
@@ -384,7 +418,7 @@ def update_notion(stories: List[Story]):
     notion = NotionClient(auth=token)
 
     # Delete all old stories
-    # TODO: instead of delelte, maybe just update their content
+    # TODO: instead of delete, maybe just update their content
     kids = notion.databases.query(database_id)["results"]
     logging.info(f"Deleting {len(kids)} old stories")
     for page in kids:
@@ -402,7 +436,7 @@ def update_notion(stories: List[Story]):
                 children=blocks,
             )
         except APIResponseError as e:
-            logging.warning(f"Error uploading story {story.id}: {e}")
+            logging.error(f"Error uploading story {story.id}: {e}")
 
 
 async def main():

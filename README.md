@@ -27,9 +27,11 @@ of my biggest time-sinks in my favourite productivity app?
 3. Rename `config-example.json` to `config.json` and enter your integration
    token and database-id. [How to get the database-id](https://developers.notion.com/docs/getting-started#step-2-share-a-database-with-your-integration)
 4. Add the following fields(properties) to the database:
-   - Pos: Number
+   - Position: Number
    - Title: Text
    - Website: URL
+   - Hackernews Link: URL
+   - Comments: Number
 5. Install all dependencies with `python3 -m pip install -r requirements.txt`
 6. Run the script with `python3 main.py`
 
